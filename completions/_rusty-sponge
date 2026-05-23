@@ -1,0 +1,109 @@
+#compdef rusty-sponge
+
+autoload -U is-at-least
+
+_rusty-sponge() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'--spill-mb=[Override the in-memory spill threshold (Default mode only; ignored in Strict mode). Default\: 128 MiB]:SPILL_MB:_default' \
+'-a[Append to the target instead of replacing it (reads the existing file first, then concatenates stdin)]' \
+'--append[Append to the target instead of replacing it (reads the existing file first, then concatenates stdin)]' \
+'(--no-strict)--strict[Enable strict moreutils-compat mode. Rejects every Default-mode extension and emits byte-equal usage/error text vs moreutils sponge]' \
+'--no-strict[Explicitly disable strict mode (overrides \`RUSTY_SPONGE_STRICT\` env var and \`argv\[0\] = sponge\` auto-detect). Highest precedence]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::target -- The file to write to. Omit to write to stdout (pipeline-batching mode):_files' \
+":: :_rusty-sponge_commands" \
+"*::: :->rusty-sponge" \
+&& ret=0
+    case $state in
+    (rusty-sponge)
+        words=($line[2] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rusty-sponge-command-$line[2]:"
+        case $line[2] in
+            (completions)
+_arguments "${_arguments_options[@]}" : \
+'-h[Print help]' \
+'--help[Print help]' \
+':shell -- Shell name\: bash, zsh, fish, powershell, elvish:(bash elvish fish powershell zsh)' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_rusty-sponge__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rusty-sponge-help-command-$line[1]:"
+        case $line[1] in
+            (completions)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_rusty-sponge_commands] )) ||
+_rusty-sponge_commands() {
+    local commands; commands=(
+'completions:Emit shell completion scripts (Default mode only)' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rusty-sponge commands' commands "$@"
+}
+(( $+functions[_rusty-sponge__subcmd__completions_commands] )) ||
+_rusty-sponge__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rusty-sponge completions commands' commands "$@"
+}
+(( $+functions[_rusty-sponge__subcmd__help_commands] )) ||
+_rusty-sponge__subcmd__help_commands() {
+    local commands; commands=(
+'completions:Emit shell completion scripts (Default mode only)' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rusty-sponge help commands' commands "$@"
+}
+(( $+functions[_rusty-sponge__subcmd__help__subcmd__completions_commands] )) ||
+_rusty-sponge__subcmd__help__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rusty-sponge help completions commands' commands "$@"
+}
+(( $+functions[_rusty-sponge__subcmd__help__subcmd__help_commands] )) ||
+_rusty-sponge__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rusty-sponge help help commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_rusty-sponge" ]; then
+    _rusty-sponge "$@"
+else
+    compdef _rusty-sponge rusty-sponge
+fi

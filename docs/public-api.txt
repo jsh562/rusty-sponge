@@ -1,0 +1,121 @@
+// rusty-sponge v0.1.0 public API surface manifest.
+//
+// This file is the hand-authored snapshot of the crate's public surface at
+// the v0.1.0 release. Future versions should bump deliberately when this
+// surface changes — additive changes are minor-version (or patch for 0.x);
+// removing or signature-changing entries is a breaking change.
+//
+// Automation via `cargo public-api` is deferred to v0.1.1 (currently fails
+// to install reliably on Windows + stable; targets nightly toolchain). When
+// the drift gate lands, this file becomes the regenerate-and-diff target.
+
+// --- Top-level re-exports ---
+
+pub use rusty_sponge::error::Error;
+
+// --- Constants ---
+
+pub const rusty_sponge::DEFAULT_SPILL_THRESHOLD: usize;
+
+// --- Public enums (all #[non_exhaustive]) ---
+
+#[non_exhaustive]
+pub enum rusty_sponge::Target {
+    Stdout,
+    File(std::path::PathBuf),
+}
+
+#[non_exhaustive]
+pub enum rusty_sponge::CompatibilityMode {
+    Default,
+    Strict,
+}
+
+#[non_exhaustive]
+pub enum rusty_sponge::error::Error {
+    TargetIsDirectory(std::path::PathBuf),
+    InvalidBuilderConfiguration(&'static str),
+    SpillThresholdInvalid(String),
+    CompatibilityViolation(&'static str),
+    Io(std::io::Error),
+}
+
+// --- Public structs (all #[non_exhaustive], fields private) ---
+
+#[non_exhaustive]
+pub struct rusty_sponge::Sponge { /* private */ }
+
+#[non_exhaustive]
+pub struct rusty_sponge::SpongeBuilder { /* private */ }
+
+// --- Builder API ---
+
+impl rusty_sponge::SpongeBuilder {
+    #[must_use] pub fn new() -> Self;
+    #[must_use] pub fn target(self, target: Target) -> Self;
+    #[must_use] pub fn append(self, append: bool) -> Self;
+    #[must_use] pub fn spill_threshold(self, bytes: usize) -> Self;
+    #[must_use] pub fn compat(self, compat: CompatibilityMode) -> Self;
+    pub fn build(self) -> Result<Sponge, Error>;
+}
+
+impl Default for rusty_sponge::SpongeBuilder {
+    fn default() -> Self;
+}
+
+// --- Sponge runtime ---
+
+impl rusty_sponge::Sponge {
+    pub fn run<R: std::io::Read>(&mut self, reader: R) -> Result<(), Error>;
+}
+
+// --- Derived trait impls ---
+
+impl std::fmt::Debug for rusty_sponge::Sponge;
+impl std::fmt::Debug for rusty_sponge::SpongeBuilder;
+impl Clone for rusty_sponge::SpongeBuilder;
+impl std::fmt::Debug for rusty_sponge::Target;
+impl Clone for rusty_sponge::Target;
+impl std::fmt::Debug for rusty_sponge::CompatibilityMode;
+impl Clone for rusty_sponge::CompatibilityMode;
+impl Copy for rusty_sponge::CompatibilityMode;
+impl PartialEq for rusty_sponge::CompatibilityMode;
+impl Eq for rusty_sponge::CompatibilityMode;
+impl Default for rusty_sponge::CompatibilityMode;
+impl std::fmt::Debug for rusty_sponge::error::Error;
+impl std::error::Error for rusty_sponge::error::Error;
+impl std::fmt::Display for rusty_sponge::error::Error;
+impl From<std::io::Error> for rusty_sponge::error::Error;
+
+// --- Binary-entry helper (gated behind `cli` feature) ---
+
+#[cfg(feature = "cli")]
+pub fn rusty_sponge::run() -> std::process::ExitCode;
+
+// --- Feature-gated modules (NOT part of the stability contract;
+//     they are documented here for transparency but library consumers
+//     should use the SpongeBuilder API, not these modules directly) ---
+
+#[cfg(feature = "cli")] pub mod rusty_sponge::cli;
+#[cfg(feature = "cli")] pub mod rusty_sponge::mode;
+#[cfg(feature = "cli")] pub mod rusty_sponge::signal;
+#[cfg(feature = "cli")] pub mod rusty_sponge::strict;
+pub mod rusty_sponge::atomic;       // exposed for tests; consumers use SpongeBuilder
+pub mod rusty_sponge::buffer;       // exposed for tests; consumers use SpongeBuilder
+pub mod rusty_sponge::writethrough; // exposed for tests; consumers use SpongeBuilder
+pub mod rusty_sponge::error;        // re-exported as crate::Error
+
+// --- Stability commitment ---
+//
+// Within 0.x:
+//   - Bumps from 0.x.y to 0.x.(y+1) MAY introduce breaking changes per Cargo's
+//     pre-1.0 semver rules. Downstream embedders that need stability should
+//     pin to the patch version (= "0.1.0") or accept that minor bumps may
+//     require code changes.
+//
+// At 1.0 and beyond:
+//   - Every public enum and struct above is `#[non_exhaustive]`, so additive
+//     variant changes are NOT breaking changes.
+//   - Removing any entry above OR changing its signature is a major-version bump.
+//   - The CLI surface (binary flag set, exit codes, stderr text in Strict mode)
+//     follows the same rules at version-bump time.

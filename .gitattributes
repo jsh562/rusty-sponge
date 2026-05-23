@@ -1,0 +1,18 @@
+# Captured moreutils sponge inputs and outputs are stored verbatim — no
+# line-ending conversion. Without this, Windows checkouts convert LF to
+# CRLF (autocrlf=true is the default), which breaks byte-equal snapshot
+# tests against fixtures whose source-of-truth is the Linux-emitted moreutils
+# output.
+fixtures/inputs/** binary
+fixtures/moreutils_outputs/** binary
+
+# Bash scripts must use LF endings even on Windows checkouts so they can
+# be run inside WSL / Linux CI / macOS without confusion.
+*.sh text eol=lf
+
+# PowerShell scripts use CRLF for native Windows tooling.
+*.ps1 text eol=crlf
+
+# Generated completion scripts also need stable line endings for the
+# drift test to compare correctly.
+completions/** -text

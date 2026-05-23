@@ -1,0 +1,122 @@
+# Inline CI per the T014 pragmatic-path decision (E003 reusable workflow does
+# not yet exist in the umbrella repo). When E003 v1.0.0 ships, this file is
+# replaced by a thin caller of `<umbrella>/.github/workflows/port-ci.yml@v1.0.0`.
+#
+# Mirrors the gates documented in `specs/00002-next-port-selection/plan.md`
+# §Testing Strategy: Clippy strict, rustfmt, cargo audit, full DDR-003
+# cross-compile matrix, snapshot suite, compat-matrix drift test, MSRV gate,
+# public-api drift, completions drift, atomic-safety fault-injection.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (deny warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1.4.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --all-features
+      - run: cargo test --all-features
+
+  test:
+    name: test ${{ matrix.target }}
+    needs: [fmt, clippy]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, cross: true }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    env:
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} --all-features
+          else
+            cargo build --release --target ${{ matrix.target }} --all-features
+          fi
+        shell: bash
+      - name: Test
+        if: matrix.cross != true
+        run: cargo test --release --target ${{ matrix.target }} --all-features
+      - name: Library-without-binary build
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo build --no-default-features
+
+  library-no-default-features:
+    name: library-without-binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --no-default-features
+      - run: cargo test --no-default-features --lib
+
+  publish-dry-run:
+    name: cargo publish --dry-run
+    needs: [fmt, clippy, audit, msrv, test, library-no-default-features]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish --dry-run --all-features

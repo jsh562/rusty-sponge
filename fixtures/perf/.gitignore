@@ -1,0 +1,4 @@
+# Performance bench input is regenerated in CI, not committed.
+# Re-create locally via `fixtures/scripts/gen-perf-input.sh`.
+random-100mib.bin
+SHA256SUMS

@@ -1,0 +1,1 @@
+sponge [-a] <file>: soak up all input from stdin and write it to <file>

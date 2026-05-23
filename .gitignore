@@ -1,0 +1,23 @@
+# Cargo build artifacts
+/target/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Insta pending snapshots (review before committing)
+*.snap.new
+*.pending-snap
+
+# Local environment overrides
+.env
+.env.local
+
+# Bench output
+/benches/output/

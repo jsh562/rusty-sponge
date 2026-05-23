@@ -1,0 +1,82 @@
+[package]
+name = "rusty-sponge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["James Han <jsh562@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+description = "Soak up stdin and write it atomically to a file — a Rust port of moreutils `sponge` with strict-compat mode, configurable spill-to-tempfile, and a typed library API."
+repository = "https://github.com/jsh562/rusty-sponge"
+homepage = "https://github.com/jsh562/rusty-sponge"
+documentation = "https://docs.rs/rusty-sponge"
+readme = "README.md"
+keywords = ["sponge", "moreutils", "atomic", "rewrite", "cli"]
+categories = ["command-line-utilities", "filesystem"]
+
+[features]
+default = ["cli"]
+# `cli` gates the CLI-only dependencies (clap, clap_complete, anyhow, signal-hook)
+# so library consumers can depend on rusty-sponge with `default-features = false`
+# without pulling in the binary's argument-parsing surface.
+cli = ["dep:clap", "dep:clap_complete", "dep:anyhow", "dep:signal-hook"]
+# `sponge-alias` adds a second binary entry named `sponge` alongside `rusty-sponge`.
+# Both binaries share the same source — they differ only in installed name.
+# argv[0] auto-detect (FR-020) routes `sponge` invocations into Strict mode.
+sponge-alias = ["cli"]
+# `bench` enables criterion benches in `benches/`. Off by default to keep
+# `cargo install` minimal.
+bench = ["dep:criterion"]
+
+[dependencies]
+tempfile = "3"
+thiserror = "2"
+# CLI-only deps gated behind the `cli` feature.
+clap = { version = "4", features = ["derive", "env"], optional = true }
+clap_complete = { version = "4", optional = true }
+anyhow = { version = "1", optional = true }
+# Unix signal handler — declared as optional at top level so the `cli` feature
+# can reference it via `dep:signal-hook`. Source code gates usage with #[cfg(unix)].
+signal-hook = { version = "0.3", optional = true }
+# Bench-only dep gated behind the `bench` feature.
+criterion = { version = "0.5", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# Windows console-control handler for tempfile cleanup-on-exit.
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+
+[dev-dependencies]
+insta = { version = "1", features = ["yaml"] }
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+static_assertions = "1"
+
+[[bin]]
+name = "rusty-sponge"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "sponge"
+path = "src/bin/sponge.rs"
+required-features = ["sponge-alias"]
+
+[[bench]]
+name = "throughput"
+harness = false
+required-features = ["bench"]
+
+[package.metadata.binstall]
+# cargo-binstall asset URL pattern. The release pipeline uploads per-target
+# archives to GitHub Releases matching this naming.
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
