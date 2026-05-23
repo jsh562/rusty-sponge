@@ -2,7 +2,7 @@
 
 A Rust port of the moreutils `sponge` utility: soak up all of stdin and write it atomically to a file, so you can safely do `cmd file | rusty-sponge file` without the shell-truncation race that breaks the equivalent `cmd file > file`. Static binaries on Linux, macOS, and Windows; works with or without a Rust toolchain via `cargo install` or `cargo binstall`. Default mode adds a few niceties moreutils doesn't have (`--help`, `--version`, `completions`, `RUSTY_SPONGE_SPILL_MB` env override); Strict mode reverts every observable surface to byte-identical moreutils behavior for drop-in migration.
 
-Part of the [Rusty portfolio](https://github.com/jsh562) — a collection of small Rust ports of utilities missing from the Rust ecosystem.
+Part of the [Rusty portfolio](https://jsh562.github.io/rusty-portfolio) — a collection of small Rust ports of utilities missing from the Rust ecosystem.
 
 ## Install
 
