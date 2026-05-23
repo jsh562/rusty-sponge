@@ -19,6 +19,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Pinned locale for byte-equality fixture assertions (see
+  # tests/common/mod.rs::assert_pinned_env and fixtures/README.md). MUST
+  # be inherited by every job that runs `cargo test`.
+  LC_ALL: C.UTF-8
 
 jobs:
   fmt:
