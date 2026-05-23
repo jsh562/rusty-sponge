@@ -4,6 +4,10 @@ A Rust port of the moreutils `sponge` utility: soak up all of stdin and write it
 
 Part of the [Rusty portfolio](https://jsh562.github.io/rusty-portfolio) — a collection of small Rust ports of utilities missing from the Rust ecosystem.
 
+[![crates.io](https://img.shields.io/crates/v/rusty-sponge.svg)](https://crates.io/crates/rusty-sponge)
+[![docs.rs](https://docs.rs/rusty-sponge/badge.svg)](https://docs.rs/rusty-sponge)
+[![license: MIT OR Apache-2.0](https://img.shields.io/crates/l/rusty-sponge.svg)](#license)
+
 ## Install
 
 ### With a Rust toolchain
