@@ -733,6 +733,7 @@ dependencies = [
  "clap_complete",
  "criterion",
  "insta",
+ "libc",
  "predicates",
  "signal-hook",
  "static_assertions",

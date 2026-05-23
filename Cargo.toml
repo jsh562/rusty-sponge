@@ -51,6 +51,13 @@ predicates = "3"
 tempfile = "3"
 static_assertions = "1"
 
+# Linux-only dev dep for the SIGKILL fault-injection test in
+# `tests/atomic_safety.rs::linux_sigkill`. The test is `#[ignore]`'d at
+# v0.1.0 — opt-in via `cargo test --test atomic_safety -- --ignored
+# sigkill_during_write_leaves_original_intact`.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+libc = "0.2"
+
 [[bin]]
 name = "rusty-sponge"
 path = "src/main.rs"
