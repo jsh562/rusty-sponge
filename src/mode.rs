@@ -116,12 +116,21 @@ mod tests {
             resolve(None, None, Some(OsStr::new("/usr/local/bin/sponge"))),
             CompatibilityMode::Strict
         );
-        // Windows-style .exe suffix
+        // Windows-style .exe suffix without a path. file_stem() strips it on
+        // every platform.
         assert_eq!(
             resolve(None, None, Some(OsStr::new("sponge.exe"))),
             CompatibilityMode::Strict,
             "argv[0] = sponge.exe must imply strict per HINT-004"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn argv0_sponge_implies_strict_windows_backslash_path() {
+        // Windows-only: backslash is the path separator. On Linux/macOS, Path
+        // treats `\` as a regular filename character so file_stem() would
+        // return `"C:\bin\sponge"` and the comparison would fail.
         assert_eq!(
             resolve(None, None, Some(OsStr::new("C:\\bin\\sponge.exe"))),
             CompatibilityMode::Strict
