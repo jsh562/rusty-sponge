@@ -51,9 +51,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v1.4.1
+      # Install a stable toolchain so any rustup-aware tool that runs outside
+      # the workspace gets a workable Rust. We do NOT cd into the repo before
+      # invoking cargo-audit so the repo's `rust-toolchain.toml` (1.85 pin)
+      # doesn't engage during the install step.
+      - uses: dtolnay/rust-toolchain@stable
+      # Prebuilt cargo-audit binary — avoids compiling from source, which
+      # would fail under 1.85 due to icu_*/home/time crates bumping MSRV
+      # to 1.86+.
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      - run: cargo audit
+        env:
+          # Force stable for this step in case `cargo` is wrapped by rustup
+          # and detects the workspace's rust-toolchain.toml.
+          RUSTUP_TOOLCHAIN: stable
 
   msrv:
     name: MSRV (1.85)
@@ -85,6 +98,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # The workspace pins to 1.85 via rust-toolchain.toml. dtolnay added the
+      # target to the stable channel, but cargo will switch to 1.85 when run
+      # from the workspace — and 1.85 doesn't have the cross-compile target
+      # installed. Add it explicitly here.
+      - name: Add cross-compile target to 1.85 toolchain
+        if: '!matrix.cross'
+        run: rustup target add ${{ matrix.target }} --toolchain 1.85
+        shell: bash
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}

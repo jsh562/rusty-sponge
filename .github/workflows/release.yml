@@ -69,6 +69,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # Workspace pins to 1.85 via rust-toolchain.toml. dtolnay added the
+      # target to the stable channel but cargo will switch to 1.85 when run
+      # from the workspace — 1.85 doesn't have the cross-compile target
+      # installed. Add it explicitly here.
+      - name: Add cross-compile target to 1.85 toolchain
+        if: '!matrix.cross'
+        run: rustup target add ${{ matrix.target }} --toolchain 1.85
+        shell: bash
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --locked
