@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-25
+
+### Added (additive only — no v0.1.x behavior changed)
+
+- Portfolio-wide [Cargo Features Convention](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md)
+  layout per ADR-0006 + `project-instructions.md` §Cargo Feature Surface. rusty-sponge applies the minimum convention as a **single-capability port** per spec 00011 §Scope Edge Cases.
+- New umbrella features (all `["cli"]` composition for this single-cap port):
+  - `full` — kitchen-sink umbrella per FR-002
+  - `sponge-classic` — required `<port>-classic` umbrella per FR-004; moreutils `sponge` drop-in replacement
+  - `sponge-minimal` — preset bundle per FR-007; explicit minimal-CLI semantic alias
+- `default` now aliases to `full` instead of directly to `cli`. Resolved dependency set is identical (`full = ["cli"]`); no observable change for any consumer.
+- See [`docs/feature-layout.md`](docs/feature-layout.md) for the zero-leaf rationale.
+
+All v0.1.x feature names are preserved verbatim with identical compositions. `cli = ["dep:clap", "dep:clap_complete", "dep:anyhow", "dep:signal-hook"]` is unchanged. `sponge-alias = ["cli"]` is unchanged. `bench = ["dep:criterion"]` is unchanged. Library consumers using `default-features = false` get the same CLI-stripped build. Users running `cargo install rusty-sponge --features sponge-alias` continue to work unchanged. Users running `cargo bench --features bench` continue to work unchanged.
+
+### Notes
+
+- See the new `## Cargo Features` section in `README.md` for the
+  feature matrix, preset bundles, keep-list workaround, and convention
+  authority citations.
+- Reference: [ADR-0006](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md)
+  (why this layout) + [`project-instructions.md` §Cargo Feature Surface](https://github.com/jsh562/rustylib/blob/main/project-instructions.md)
+  (what the rules are).
+- CI matrix expanded per spec 00011 FR-010..FR-014: now includes
+  `test-default` (kitchen sink + cross-compile), `test-no-default`
+  (bare library + dep-tree audit per SC-001), `test-sponge-classic`,
+  `test-sponge-minimal` (preset bundles per SC-003), `test-keeplist`
+  (keep-list workaround per SC-004), and `lint-convention` (vendored
+  `tools/feature-lint/run.sh` invocation per FR-052). Tier 4
+  (`check-leaf-<leaf>`) is intentionally empty — zero leaves carved
+  per docs/feature-layout.md.
+- The lint script is **vendored** into `tools/feature-lint/` (synced
+  from the umbrella `jsh562/rustylib` repo) so per-port CI workflows
+  do not depend on cross-repo `actions/checkout` of the private
+  umbrella. Sync precedent set by rusty-figlet v0.2.0 (E011 Phase 2
+  iteration 6) and rusty-ts v0.2.0 (E011 Phase 3).
+
+## [0.1.0] - 2026-05-23
+
 ### Added
 
 - CLI binary `rusty-sponge`: soak up all of stdin and write it atomically to a file (Rust port of moreutils `sponge`).
@@ -55,4 +94,6 @@ This is an explicit upward deviation from the Rusty portfolio's standard "curren
 
 A full Compatibility Matrix mapping every moreutils `sponge` flag and every Rusty-added flag to Default-mode and Strict-mode behavior lives at [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md). The file is generated from the canonical CLI definition and CI fails on drift.
 
-[Unreleased]: https://github.com/jsh562/rusty-sponge/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/jsh562/rusty-sponge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jsh562/rusty-sponge/releases/tag/v0.2.0
+[0.1.0]: https://github.com/jsh562/rusty-sponge/releases/tag/v0.1.0

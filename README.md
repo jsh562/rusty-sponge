@@ -1,87 +1,68 @@
 # rusty-sponge
 
-A Rust port of the moreutils `sponge` utility: soak up all of stdin and write it atomically to a file, so you can safely do `cmd file | rusty-sponge file` without the shell-truncation race that breaks the equivalent `cmd file > file`. Static binaries on Linux, macOS, and Windows; works with or without a Rust toolchain via `cargo install` or `cargo binstall`. Default mode adds a few niceties moreutils doesn't have (`--help`, `--version`, `completions`, `RUSTY_SPONGE_SPILL_MB` env override); Strict mode reverts every observable surface to byte-identical moreutils behavior for drop-in migration.
-
-Part of the [Rusty portfolio](https://jsh562.github.io/rusty-portfolio) — a collection of small Rust ports of utilities missing from the Rust ecosystem.
+Soak up stdin & rewrite the file atomically. Rust port of moreutils [`sponge(1)`](https://joeyh.name/code/moreutils/).
 
 [![crates.io](https://img.shields.io/crates/v/rusty-sponge.svg)](https://crates.io/crates/rusty-sponge)
 [![docs.rs](https://docs.rs/rusty-sponge/badge.svg)](https://docs.rs/rusty-sponge)
+[![CI](https://github.com/jsh562/rusty-sponge/actions/workflows/ci.yml/badge.svg)](https://github.com/jsh562/rusty-sponge/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
 [![license: MIT OR Apache-2.0](https://img.shields.io/crates/l/rusty-sponge.svg)](#license)
+
+Lets you write `cmd file | rusty-sponge file` without the shell-truncation race that breaks the equivalent `cmd file > file`. Default mode adds `--help`, `--version`, `completions`, & a `RUSTY_SPONGE_SPILL_MB` env override. Strict mode reverts every observable surface to byte-equal moreutils `sponge` for drop-in migration.
+
+Part of the [Rusty portfolio](https://jsh562.github.io/rusty-portfolio).
 
 ## Install
 
-### With a Rust toolchain
-
 ```sh
 cargo install rusty-sponge
+# or, with prebuilt binaries:
+cargo binstall rusty-sponge
+# or, download directly from GitHub Releases:
+# https://github.com/jsh562/rusty-sponge/releases
 ```
 
-To also install the `sponge` binary alias (auto-enables Strict mode on invocation):
+To also install a `sponge` binary alias (argv[0] auto-detect routes into Strict mode):
 
 ```sh
 cargo install rusty-sponge --features sponge-alias
 ```
 
-### Without a Rust toolchain (prebuilt binaries via cargo-binstall)
-
-```sh
-cargo binstall rusty-sponge
-```
-
-### Direct download
-
-Per-target archives are attached to each [GitHub Release](https://github.com/jsh562/rusty-sponge/releases). Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64. Each archive contains the binary plus pre-generated shell-completion scripts for bash, zsh, fish, and PowerShell.
-
 ## Usage
 
 ```sh
-# In-place file rewrite (sponge's headline use case)
+# In-place rewrite without the shell-truncation race (sponge's headline use case)
 sort file.txt | rusty-sponge file.txt
 
-# Pipeline batching to stdout (no file argument)
+# Filter a config file & write it back safely
+grep -v '^#' config.yaml | rusty-sponge config.yaml
+
+# Pipeline batching to stdout (no file argument; useful as a flow barrier)
 producer | rusty-sponge | consumer
 
-# Append mode (read existing file first, then append stdin, then atomically replace)
+# Append mode (read existing file first, then append stdin, then atomic rename)
 echo "new line" | rusty-sponge -a logfile
-
-# Strict moreutils-compat mode (rejects `--help`/`--version`/`completions`, mirrors stderr layout)
-some-command | rusty-sponge --strict file
-RUSTY_SPONGE_STRICT=1 some-command | rusty-sponge file
-some-command | sponge file    # via the sponge-alias feature or a symlink — argv[0] auto-detect
 
 # Configurable spill threshold (Default mode only; default 128 MiB)
 RUSTY_SPONGE_SPILL_MB=8 huge-producer | rusty-sponge target.bin
 
+# Strict moreutils-compat mode (drop-in moreutils sponge replacement)
+some-command | rusty-sponge --strict file
+RUSTY_SPONGE_STRICT=1 some-command | rusty-sponge file
+some-command | sponge file               # via sponge-alias feature or argv[0] symlink
+
 # Shell completions
-rusty-sponge completions bash    # > ~/.bash_completion.d/rusty-sponge
-rusty-sponge completions zsh     # > ~/.zfunc/_rusty-sponge
-rusty-sponge completions fish    # > ~/.config/fish/completions/rusty-sponge.fish
+rusty-sponge completions bash             # > ~/.bash_completion.d/rusty-sponge
+rusty-sponge completions zsh              # > ~/.zfunc/_rusty-sponge
+rusty-sponge completions fish             # > ~/.config/fish/completions/rusty-sponge.fish
 rusty-sponge completions powershell
 ```
 
-## Compatibility statement (vs moreutils sponge)
-
-Byte-level fidelity is verified by snapshot tests against captured moreutils-`sponge` output under a pinned environment (`LC_ALL=C.UTF-8`). The snapshot reference is moreutils at a pinned upstream commit recorded in [`fixtures/README.md`](fixtures/README.md).
-
-**Atomic-safety guarantee (FR-006)**: When `rusty-sponge` writes to a regular non-symlink file, it writes to a sibling tempfile in the target's parent directory and atomically `rename`s into place. Mid-write failures (SIGKILL, power loss, disk full) leave the original file byte-identical to its pre-invocation state — this is the property the original `sponge` was invented to provide. **The guarantee does NOT apply when**:
-1. The target is a symlink or non-regular file (FR-010) — the linked file is written through with `O_WRONLY+O_TRUNC`, matching moreutils' `S_ISREG && !S_ISLNK` short-circuit.
-2. The cross-volume / shared-handle atomic-rename fallback path triggers (FR-025) — non-atomic copy + truncate-and-rewrite is used as a last resort.
-Both fallback paths match moreutils behavior; they are documented limitations, not bugs.
-
-**Documented intentional divergences from moreutils sponge** (also enumerated in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) — generated from the CLI definition and drift-tested in CI):
-
-1. **`--help` / `--version` flags**: not present in moreutils. Default-mode additions; rejected in Strict mode.
-2. **`completions` subcommand**: not present in moreutils. Default-mode addition; rejected in Strict mode.
-3. **`RUSTY_SPONGE_SPILL_MB` env var**: not defined by moreutils (which sizes its spill heuristic dynamically from available RAM). Honored in Default mode; ignored in Strict mode.
-4. **Spill threshold default**: 128 MiB (compile-time constant) vs moreutils' dynamic ½-available-RAM. Trades RAM-aware sizing for predictability; configurable via the env var or library builder.
-
-In Strict mode, exit codes, stderr diagnostic text, and the `-h` usage layout match moreutils. See [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the full per-flag matrix and exit-code table.
-
 ## Library API
 
-The crate exposes a public Rust API for programmatic use. The canonical surface is byte-typed (preserves non-UTF-8 payload bytes per FR-012); the builder produces a `Sponge` runtime that owns the buffer and the atomic-rename procedure.
+The crate exposes a byte-typed runtime. The builder owns the buffer & the atomic-rename procedure. Use it inside a daemon when you want sponge's crash-safety without spawning a child process per write.
 
-```rust
+```rust,no_run
 use rusty_sponge::{SpongeBuilder, Target, CompatibilityMode};
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -97,42 +78,94 @@ sponge.run(Cursor::new(b"hello\nworld\n"))?;
 # Ok::<(), rusty_sponge::Error>(())
 ```
 
-To use the library without pulling in the CLI dependencies:
+For library-only consumers without CLI deps see the [Cargo Features](#cargo-features) section.
+
+## Cargo Features
+
+`default` enables `full`, which (for this single-capability port) resolves to the `cli` umbrella. `sponge-classic` reproduces v0.1.x bare-port behavior matching upstream moreutils `sponge` 1:1. To strip the CLI surface use `default-features = false` or `--no-default-features` & add the features you want.
+
+rusty-sponge is a **single-capability port**: its one documented job is "soak up stdin & write it atomically to a file". No optional feature leaves are carved beyond the required umbrellas; see [`docs/feature-layout.md`](docs/feature-layout.md) for why.
+
+### Feature matrix
+
+| Feature | Description | Umbrella(s) |
+|---|---|---|
+| `cli` | All CLI-only dependencies (`clap`, `clap_complete`, `anyhow`, `signal-hook`) and the binary entry point, signal-handler install, mode resolver, and Strict-mode pre-scanner. Library consumers strip via `default-features = false`. | `full`, `sponge-classic`, `sponge-minimal`, `sponge-alias` |
+| `sponge-alias` | Installs an additional `sponge` binary alongside `rusty-sponge`. Both share source; argv[0] auto-detect routes `sponge` invocations into Strict mode. | (standalone, implies `cli`) |
+| `bench` | Pulls `criterion` and enables `benches/throughput.rs`. Dev-tooling only; outside the convention's leaf surface. Name preserved verbatim from v0.1.x. | (standalone) |
+
+### Preset bundles
+
+| Bundle | Composition | Use case |
+|---|---|---|
+| `sponge-classic` | `cli` | Drop-in upstream moreutils `sponge` replacement. Strict mode is invoked via `--strict`, `RUSTY_SPONGE_STRICT`, or `sponge-alias` argv[0] auto-detect. |
+| `sponge-minimal` | `cli` | Explicit minimal-CLI alias for users who prefer the `<port>-minimal` naming convention seen across other portfolio ports (figlet-minimal, ts-minimal, pwgen-minimal). Identical composition to `sponge-classic`. |
+
+### Keep-list workaround (Cargo features are union-only)
+
+Cargo features cannot subtract from `default`. To get "everything except a specific feature," disable defaults & enumerate the features you want:
+
+```sh
+cargo install rusty-sponge --no-default-features --features "cli"
+# → bare CLI with no sponge-alias binary, no bench tooling.
+
+cargo install rusty-sponge --no-default-features --features "cli sponge-alias"
+# → CLI + the sponge alias binary.
+```
+
+For the common cases the named [preset bundles](#preset-bundles) are usually sufficient.
+
+### Library-only consumers
 
 ```toml
 [dependencies]
-rusty-sponge = { version = "0.1", default-features = false }
+rusty-sponge = { version = "0.2", default-features = false }
 ```
 
-### Stability commitment
+This strips `clap`, `clap_complete`, `anyhow`, & `signal-hook`. The resulting build pulls only `tempfile`, `thiserror`, & the `windows-sys` target-conditional dep (Windows only). The CI `test-no-default` job runs `cargo tree --no-default-features` on every PR & fails the build if any CLI-only dep leaks back in.
 
-**Lockstep SemVer**: the library and binary share a single crate version. Within the `0.x` series, minor version bumps may introduce breaking changes per standard Cargo semantics — pin to the patch version (`= "0.1.0"`) if breakage is a concern. Once `1.0` lands, the API is frozen to additive-only changes guarded by `#[non_exhaustive]` on every public enum and struct.
+### Convention authority
+
+This layout follows the portfolio-wide Cargo Features Convention. The "why" lives in [ADR-0006](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md); the "what" lives in [`project-instructions.md` §Cargo Feature Surface](https://github.com/jsh562/rustylib/blob/main/project-instructions.md). Every Rusty port from v0.2 onward exposes the same umbrella set (`default` / `full` / `cli` / `<port>-classic`), per-port leaves named in kebab-case, & 2 to 4 preset bundles.
+
+## Compatibility
+
+`rusty-sponge` has two modes:
+
+- **Default mode.** clap-styled flag parser. `--help`, `--version`, the `completions` subcommand, & the `RUSTY_SPONGE_SPILL_MB` env override are all available. Spill threshold defaults to 128 MiB (compile-time constant) so RAM sizing is predictable across hosts.
+- **Strict mode** (activated by `--strict`, `RUSTY_SPONGE_STRICT=1`, or invoking the binary as `sponge`). Byte-equal stdout, stderr, exit codes, & the `-h` usage layout against moreutils `sponge` at the pinned upstream commit recorded in [`fixtures/README.md`](fixtures/README.md). `--help`, `--version`, & `completions` MUST be rejected. `RUSTY_SPONGE_SPILL_MB` MUST be ignored.
+
+### Atomic-safety guarantee
+
+When `rusty-sponge` writes to a regular non-symlink file, it writes to a sibling tempfile in the target's parent directory & atomically `rename`s into place. Mid-write failures (SIGKILL, power loss, disk full) leave the original file byte-identical to its pre-invocation state. This is the property the original `sponge` was invented to provide.
+
+The guarantee does NOT apply when:
+
+1. The target is a symlink or non-regular file. The linked file is written through with `O_WRONLY+O_TRUNC`, matching moreutils' `S_ISREG && !S_ISLNK` short-circuit.
+2. The cross-volume / shared-handle atomic-rename fallback triggers. Non-atomic copy + truncate-and-rewrite runs as a last resort.
+
+Both fallback paths match moreutils behavior. They are documented limitations, not bugs.
+
+### Documented intentional divergences
+
+1. **`--help` / `--version`**. Default-mode additions; rejected in Strict.
+2. **`completions` subcommand**. Default-mode addition; rejected in Strict.
+3. **`RUSTY_SPONGE_SPILL_MB` env var**. Honored in Default; ignored in Strict.
+4. **Spill threshold default**: 128 MiB compile-time constant vs moreutils' dynamic ½-available-RAM heuristic. Trades RAM-aware sizing for predictability; configurable via env var or library builder.
+
+See [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the full per-flag matrix & exit-code table.
+
+## What's not shipped
+
+- **moreutils' dynamic ½-available-RAM spill heuristic.** Replaced with the 128 MiB compile-time constant for predictability across hosts. Users override via `RUSTY_SPONGE_SPILL_MB` or the library `spill_threshold` builder setter.
+- **Source-code derivation from moreutils.** This is a clean-room reimplementation. The moreutils `sponge` C source is GPL'd & untouched. Snapshot tests compare runtime output bytes only, which are facts, not creative expression. Same posture as [`uutils/coreutils`](https://github.com/uutils/coreutils).
+
+If you want the original moreutils `sponge`, install it via your platform package manager (`apt install moreutils`, `brew install moreutils`). It coexists fine with this port.
 
 ## MSRV
 
-Minimum supported Rust version: **1.85**.
-
-This is an upward deviation from the Rusty portfolio's standard "current stable minus two minor releases" rule, forced by the crate's use of Rust edition 2024 (which requires 1.85+). The portfolio rule remains in effect for ports not using edition 2024; this crate's MSRV will advance with edition adoption, not with the rolling N-2 cadence.
-
-## Relationship to moreutils
-
-`rusty-sponge` is a **clean-room Rust reimplementation** of the moreutils `sponge` utility. It contains **no source code from moreutils** — only a from-scratch Rust implementation that observes the documented behavior of moreutils `sponge` and reproduces it.
-
-The moreutils `sponge` C source is © Colin Watson and Tollef Fog Heen (2006) and licensed under the GNU GPL (v2 or later). That license governs the *C source code*. Behavioral interfaces (flag set, buffering semantics, atomic-rename pattern) are not copyrightable, so a clean-room reimplementation under a different license is well-established practice — the same posture as [`uutils/coreutils`](https://github.com/uutils/coreutils) (MIT-licensed reimplementation of GPL-licensed GNU coreutils).
-
-`rusty-sponge` does **not** distribute or derive from the moreutils source code. Snapshot tests in this repository compare `rusty-sponge` *runtime output* against captured *moreutils sponge runtime output* (captured by running moreutils against fixtures and recording bytes) — that is not source-code derivation either. The captured output bytes are facts, not creative expression.
-
-If you want the original moreutils `sponge`, install it via your platform's package manager (`apt install moreutils`, `brew install moreutils`, etc.) — that is unaffected by this port's existence.
+Rust **1.85** (edition 2024). Re-verified against the portfolio's stable-minus-two policy at each release.
 
 ## License
 
-Licensed under either of
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT License ([LICENSE](LICENSE))
-
-at your option.
-
-### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+Dual-licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE) at your option.

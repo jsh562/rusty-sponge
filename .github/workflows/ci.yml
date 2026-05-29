@@ -1,11 +1,26 @@
-# Inline CI per the T014 pragmatic-path decision (E003 reusable workflow does
-# not yet exist in the umbrella repo). When E003 v1.0.0 ships, this file is
-# replaced by a thin caller of `<umbrella>/.github/workflows/port-ci.yml@v1.0.0`.
+# rusty-sponge CI workflow.
 #
-# Mirrors the gates documented in `specs/00002-next-port-selection/plan.md`
-# §Testing Strategy: Clippy strict, rustfmt, cargo audit, full DDR-003
-# cross-compile matrix, snapshot suite, compat-matrix drift test, MSRV gate,
-# public-api drift, completions drift, atomic-safety fault-injection.
+# v0.2.0 (E011 Phase 4) expands the v0.1.0 pipeline with the portfolio-wide
+# Cargo Features Convention 5-tier matrix per spec 00011 §Per-Port v0.2.0
+# CI Matrix + FR-010..FR-014:
+#
+#   Tier 1 — test-default                (full DDR-003 cross-compile matrix)
+#   Tier 2 — test-no-default             (Linux x86_64 only + dep-tree audit)
+#   Tier 3 — test-<bundle>               (per preset, Linux only)
+#   Tier 4 — check-leaf-<leaf>           (SKIPPED — zero leaves, see below)
+#   Tier 5 — lint-convention             (vendored feature-lint, Linux only)
+#
+# rusty-sponge is a single-capability port per spec 00011 §Scope Edge Cases —
+# minimum-convention surface with zero carved leaves. Tier 4 is intentionally
+# empty (no `check-leaf-<leaf>` jobs) because there are no leaves to check
+# per docs/feature-layout.md §v0.2.0 Carved Leaves.
+#
+# v0.2.0 is a PURELY ADDITIVE release. All v0.1.x feature names and
+# compositions are preserved verbatim; this CI matrix layers the new tiered
+# coverage on top without removing any pre-existing gates.
+#
+# Pre-existing v0.1.0 gates (rustfmt, clippy, audit, MSRV, full cross-compile
+# matrix, library-without-binary, publish-dry-run) are preserved unchanged.
 
 name: CI
 
@@ -23,6 +38,9 @@ env:
   # tests/common/mod.rs::assert_pinned_env and fixtures/README.md). MUST
   # be inherited by every job that runs `cargo test`.
   LC_ALL: C.UTF-8
+
+permissions:
+  contents: read
 
 jobs:
   fmt:
@@ -78,8 +96,14 @@ jobs:
       - run: cargo build --all-features
       - run: cargo test --all-features
 
-  test:
-    name: test ${{ matrix.target }}
+  # -----------------------------------------------------------------------------
+  # Tier 1 — test-default: full DDR-003 cross-compile matrix on `default`
+  # features. `default = ["full"]` post-v0.2.0; for rusty-sponge (single-cap
+  # port) `full` resolves to `cli` alone, so the kitchen-sink test covers the
+  # full documented surface and matches v0.1.x default coverage byte-for-byte.
+  # -----------------------------------------------------------------------------
+  test-default:
+    name: test-default ${{ matrix.target }}
     needs: [fmt, clippy]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -126,7 +150,216 @@ jobs:
       - name: Library-without-binary build
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: cargo build --no-default-features
+      # SC-002 default-install smoke (Linux x86_64 only — the binary is the
+      # same on every target). Runs the binary against representative input
+      # and asserts the documented capability emits the expected output.
+      - name: Default install + capability smoke (SC-002)
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.cross != true
+        run: |
+          cargo install --path . --no-track --force --locked
+          smoke_dir=$(mktemp -d)
+          target="$smoke_dir/out.txt"
+          printf 'hello\nworld\n' | rusty-sponge "$target"
+          if [ ! -f "$target" ]; then
+            echo "::error::SC-002 smoke failed — target file not created"
+            exit 1
+          fi
+          if ! diff -u <(printf 'hello\nworld\n') "$target"; then
+            echo "::error::SC-002 smoke failed — target content mismatch"
+            exit 1
+          fi
+          echo "SC-002 default-install smoke: PASS"
+        shell: bash
 
+  # -----------------------------------------------------------------------------
+  # Tier 2 — test-no-default: bare library on Linux x86_64. Verifies CLI-only
+  # deps are absent from the library build (SC-001 evidence).
+  # -----------------------------------------------------------------------------
+  test-no-default:
+    name: test-no-default (linux-x86_64)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --no-default-features
+      - run: cargo test --no-default-features --lib
+      - name: Dep-tree audit (SC-001)
+        run: |
+          # Assert no CLI-only deps leak into the bare-library build.
+          if cargo tree --no-default-features --prefix none --edges normal --no-dedupe \
+              | grep -E '^(clap|clap_complete|anyhow|signal-hook)\b'; then
+            echo "::error::CLI-only dep leaked into --no-default-features build"
+            exit 1
+          fi
+          echo "SC-001 dep-tree audit: PASS"
+
+  # -----------------------------------------------------------------------------
+  # Tier 3 — test-<bundle>: one job per preset bundle. Linux x86_64 only.
+  # rusty-sponge declares 2 preset bundles per FR-007 (single-cap minimum).
+  # -----------------------------------------------------------------------------
+  test-sponge-classic:
+    name: test-sponge-classic (linux-x86_64)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --no-default-features --features sponge-classic
+      - run: cargo test --no-default-features --features sponge-classic --lib
+      # SC-003 per-preset install + size check.
+      - name: Per-preset install + size check (SC-003)
+        run: |
+          cargo install --path . --no-track --force --locked \
+            --no-default-features --features sponge-classic
+          bundle_size=$(stat -c%s "$(which rusty-sponge)")
+          echo "sponge-classic binary size: $bundle_size bytes"
+          echo "$bundle_size" > /tmp/sponge-classic-size.txt
+          # Baseline sanity: assert the binary is not zero-sized.
+          if [ "$bundle_size" -le "0" ]; then
+            echo "::error::SC-003 preset install produced empty binary"
+            exit 1
+          fi
+          echo "SC-003 sponge-classic install: PASS"
+        shell: bash
+
+  test-sponge-minimal:
+    name: test-sponge-minimal (linux-x86_64)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --no-default-features --features sponge-minimal
+      - run: cargo test --no-default-features --features sponge-minimal --lib
+      # SC-003 per-preset install + size check.
+      - name: Per-preset install + size check (SC-003)
+        run: |
+          cargo install --path . --no-track --force --locked \
+            --no-default-features --features sponge-minimal
+          bundle_size=$(stat -c%s "$(which rusty-sponge)")
+          echo "sponge-minimal binary size: $bundle_size bytes"
+          if [ "$bundle_size" -le "0" ]; then
+            echo "::error::SC-003 preset install produced empty binary"
+            exit 1
+          fi
+          echo "SC-003 sponge-minimal install: PASS"
+        shell: bash
+
+  # -----------------------------------------------------------------------------
+  # Tier 4 — check-leaf-<leaf>: SKIPPED for rusty-sponge.
+  #
+  # rusty-sponge is a single-capability port per spec 00011 §Scope Edge Cases.
+  # No leaves are carved beyond the required umbrellas (see
+  # docs/feature-layout.md §v0.2.0 Carved Leaves — explicit rejection
+  # rationale for each candidate leaf). The feature-lint script's
+  # leaf-CI-matrix sub-check passes vacuously (no leaves to enumerate).
+  # The `bench` dev-tooling feature is in the lint allowlist and does not
+  # require a Tier-4 entry.
+  # -----------------------------------------------------------------------------
+
+  # -----------------------------------------------------------------------------
+  # SC-004 — keep-list workaround smoke. Single-capability port has a
+  # trivial keep-list (just `cli` plus optional `sponge-alias`), but the job
+  # exists to validate the documented invocation path.
+  # -----------------------------------------------------------------------------
+  test-keeplist:
+    name: test-keeplist (linux-x86_64)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install with explicit keep-list
+        run: |
+          cargo install --path . --no-track --force --locked \
+            --no-default-features --features cli
+          smoke_dir=$(mktemp -d)
+          target="$smoke_dir/out.txt"
+          printf 'hello\n' | rusty-sponge "$target"
+          if [ ! -f "$target" ]; then
+            echo "::error::SC-004 keep-list install: target file not created"
+            exit 1
+          fi
+          if ! grep -q '^hello$' "$target"; then
+            echo "::error::SC-004 keep-list install: target content unexpected"
+            cat "$target"
+            exit 1
+          fi
+          echo "SC-004 keep-list (--features cli) install: PASS"
+        shell: bash
+
+  # -----------------------------------------------------------------------------
+  # Tier 5 — lint-convention: feature-lint script is vendored into the port
+  # (tools/feature-lint/) so the CI does not depend on cross-repo checkout
+  # of the (private) umbrella. Each port keeps its own copy in sync with
+  # the umbrella source of truth.
+  # -----------------------------------------------------------------------------
+  lint-convention:
+    name: lint-convention (linux-x86_64)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout port
+        uses: actions/checkout@v4
+
+      - name: Run feature-lint
+        env:
+          UMBRELLA_PATH: ${{ github.workspace }}
+          PORT_PATH: ${{ github.workspace }}
+        run: bash tools/feature-lint/run.sh
+
+  # -----------------------------------------------------------------------------
+  # Convention-violation self-test (SC-007 evidence). Manually triggered;
+  # creates a temp Cargo.toml without `sponge-classic` and asserts the lint
+  # script catches the violation. Spec 00011 T056.
+  # -----------------------------------------------------------------------------
+  convention-lint-self-test:
+    name: convention-lint-self-test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout port
+        uses: actions/checkout@v4
+
+      - name: Remove sponge-classic umbrella from Cargo.toml
+        run: |
+          sed -i '/^sponge-classic\s*=/d' Cargo.toml
+          # Verify removal
+          if grep -E '^sponge-classic\s*=' Cargo.toml; then
+            echo "::error::sponge-classic removal failed"
+            exit 1
+          fi
+
+      - name: Invoke feature-lint and expect non-zero exit
+        env:
+          UMBRELLA_PATH: ${{ github.workspace }}
+          PORT_PATH: ${{ github.workspace }}
+        run: |
+          set +e
+          bash tools/feature-lint/run.sh 2>stderr.log
+          rc=$?
+          set -e
+          cat stderr.log
+          if [ "$rc" = "0" ]; then
+            echo "::error::feature-lint should have failed with exit 2 but returned 0"
+            exit 1
+          fi
+          if ! grep -q "required umbrella 'sponge-classic' missing" stderr.log; then
+            echo "::error::expected diagnostic 'required umbrella sponge-classic missing' not found"
+            exit 1
+          fi
+          echo "convention-lint-self-test: PASS"
+
+  # -----------------------------------------------------------------------------
+  # Library-without-binary build (v0.1.x parity gate). Retained verbatim;
+  # the Tier 2 test-no-default job covers a superset of this check, but
+  # this job runs in parallel + isolation for the publish-dry-run gate.
+  # -----------------------------------------------------------------------------
   library-no-default-features:
     name: library-without-binary
     runs-on: ubuntu-latest
@@ -137,9 +370,23 @@ jobs:
       - run: cargo build --no-default-features
       - run: cargo test --no-default-features --lib
 
+  # -----------------------------------------------------------------------------
+  # Publish-dry-run + final gate. Runs after every tier above.
+  # -----------------------------------------------------------------------------
   publish-dry-run:
     name: cargo publish --dry-run
-    needs: [fmt, clippy, audit, msrv, test, library-no-default-features]
+    needs:
+      - fmt
+      - clippy
+      - audit
+      - msrv
+      - test-default
+      - test-no-default
+      - test-sponge-classic
+      - test-sponge-minimal
+      - test-keeplist
+      - lint-convention
+      - library-no-default-features
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

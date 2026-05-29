@@ -1,6 +1,6 @@
 [package]
 name = "rusty-sponge"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["James Han <jsh562@users.noreply.github.com>"]
@@ -13,18 +13,80 @@ readme = "README.md"
 keywords = ["sponge", "moreutils", "atomic", "rewrite", "cli"]
 categories = ["command-line-utilities", "filesystem"]
 
+# -----------------------------------------------------------------------------
+# [features] — v0.2.0 portfolio-wide Cargo Features Convention layout.
+#
+# Convention authority:
+#   * specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md (why)
+#   * project-instructions.md §Cargo Feature Surface (what)
+#
+# rusty-sponge is a single-capability port per spec 00011 §Scope Edge Cases:
+# the documented capability is "soak up stdin and write it atomically to a
+# file". Per the minimum-convention rule, ZERO new leaves are carved beyond
+# the required umbrellas. See docs/feature-layout.md for the explicit
+# carving rationale.
+#
+# v0.2.0 is a PURELY ADDITIVE release. Every v0.1.x feature name and
+# composition is preserved verbatim; the new umbrellas (`full`,
+# `sponge-classic`, `sponge-minimal`) layer on top without renaming or
+# narrowing existing features. No SemVer break.
+#
+# Required umbrellas (FR-001..FR-004):
+#   default          — alias for `full`; kitchen-sink for casual `cargo install`
+#   full             — every leaf (degenerates to `cli` in this single-cap port)
+#   cli              — CLI-only deps + modules (library consumers strip)
+#   sponge-classic   — bare port, drop-in match for upstream moreutils `sponge`
+#
+# Required preset bundles (FR-007 — 2 per port even for single-cap):
+#   sponge-classic   — moreutils sponge drop-in replacement (aliased above)
+#   sponge-minimal   — explicit minimal-CLI alias (same composition)
+#
+# Retained v0.1.x features (additive — names + compositions preserved verbatim):
+#   cli              — unchanged: clap + clap_complete + anyhow + signal-hook
+#   sponge-alias     — unchanged: adds a second `sponge` binary entry
+#   bench            — unchanged: criterion benches (dev-tooling, allowlist)
+#
+# No leaf features carved — see docs/feature-layout.md §Leaves intentionally
+# NOT carved for the explicit per-capability rejection rationale.
+# -----------------------------------------------------------------------------
+
 [features]
-default = ["cli"]
-# `cli` gates the CLI-only dependencies (clap, clap_complete, anyhow, signal-hook)
-# so library consumers can depend on rusty-sponge with `default-features = false`
-# without pulling in the binary's argument-parsing surface.
+default = ["full"]
+
+# Umbrella: every leaf enabled. Kitchen sink for `cargo install` casual users.
+# In rusty-sponge (single-capability port) `full` resolves to `cli` alone —
+# preserving identical resolution to the v0.1.x `default = ["cli"]` so no
+# observable change for any consumer.
+full = ["cli"]
+
+# Umbrella: all CLI-only deps + modules. Library consumers strip this via
+# `default-features = false`. Composition preserved verbatim from v0.1.x.
 cli = ["dep:clap", "dep:clap_complete", "dep:anyhow", "dep:signal-hook"]
-# `sponge-alias` adds a second binary entry named `sponge` alongside `rusty-sponge`.
-# Both binaries share the same source — they differ only in installed name.
-# argv[0] auto-detect (FR-020) routes `sponge` invocations into Strict mode.
+
+# Umbrella: bare port, drop-in match for upstream moreutils `sponge`. Pulls
+# the CLI surface; the bare moreutils `sponge` set is reproduced via
+# `--strict`, `RUSTY_SPONGE_STRICT` env var, or `sponge-alias` argv[0]
+# auto-detect (no extra feature flag required).
+sponge-classic = ["cli"]
+
+# Preset bundle: explicit minimal-CLI alias. Same composition as
+# sponge-classic (single-capability port has no smaller subset to carve).
+# Provided as a semantic alias mirroring the `<port>-minimal` naming
+# convention used by other portfolio ports (figlet-minimal, ts-minimal,
+# pwgen-minimal).
+sponge-minimal = ["cli"]
+
+# v0.1.x feature retained verbatim per the v0.2.0 SemVer additive contract.
+# `sponge-alias` adds a second binary entry named `sponge` alongside
+# `rusty-sponge`. Both binaries share the same source; argv[0] auto-detect
+# (FR-020) routes `sponge` invocations into Strict mode. NOT a convention
+# preset bundle — it is an installation-time convenience knob.
 sponge-alias = ["cli"]
-# `bench` enables criterion benches in `benches/`. Off by default to keep
-# `cargo install` minimal.
+
+# Dev-tooling feature (criterion benches in `benches/`). Outside the
+# convention's purview; name + composition preserved verbatim from v0.1.x.
+# Recognized by the feature-lint dev-tooling allowlist — skipped from
+# leaf-CI-matrix and phantom-leaf checks.
 bench = ["dep:criterion"]
 
 [dependencies]
